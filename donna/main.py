@@ -23,8 +23,14 @@ from pathlib import Path
 
 # ─── Data directory must exist before logging tries to open the log file ──────
 
-_DATA_DIR = Path(__file__).parent.parent / "data"
+_REPO_ROOT = Path(__file__).parent.parent
+_DATA_DIR = _REPO_ROOT / "data"
 _DATA_DIR.mkdir(exist_ok=True)
+
+# Ensure the repo root is on sys.path so `donna` is importable regardless
+# of which directory the user launches from.
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 # ─── Logging setup ────────────────────────────────────────────────────────────
 

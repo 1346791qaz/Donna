@@ -1,0 +1,42 @@
+# ─── Donna requirements.txt ───────────────────────────────────────────────────
+# Install with:  pip install -r requirements.txt
+# Python 3.11+ required
+
+# ── LLM ──
+anthropic>=0.40.0
+
+# ── Wake word ──
+pvporcupine>=3.0.0
+
+# ── STT ──
+faster-whisper>=1.0.0
+webrtcvad>=2.0.10
+
+# ── TTS ──
+kokoro>=0.9.4
+sounddevice>=0.4.6
+soundfile>=0.12.1
+
+# ── Audio I/O ──
+pyaudio>=0.2.14
+numpy>=1.24.0
+
+# ── Google APIs ──
+google-auth>=2.0.0
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.2.0
+google-api-python-client>=2.100.0
+
+# ── UI ──
+customtkinter>=5.2.0
+pystray>=0.19.0
+Pillow>=10.0.0
+
+# ── Contacts fuzzy match ──
+rapidfuzz>=3.0.0
+
+# ── Config ──
+python-dotenv>=1.0.0
+
+# ── Scheduler ──
+APScheduler>=3.10.0

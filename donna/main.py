@@ -21,6 +21,17 @@ import threading
 import os
 from pathlib import Path
 
+# ─── Data directory must exist before logging tries to open the log file ──────
+
+_REPO_ROOT = Path(__file__).parent.parent
+_DATA_DIR = _REPO_ROOT / "data"
+_DATA_DIR.mkdir(exist_ok=True)
+
+# Ensure the repo root is on sys.path so `donna` is importable regardless
+# of which directory the user launches from.
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 # ─── Logging setup ────────────────────────────────────────────────────────────
 
 logging.basicConfig(
@@ -29,7 +40,7 @@ logging.basicConfig(
     handlers=[
         logging.StreamHandler(sys.stdout),
         logging.FileHandler(
-            Path(__file__).parent.parent / "data" / "donna.log",
+            _DATA_DIR / "donna.log",
             encoding="utf-8",
         ),
     ],
@@ -38,8 +49,7 @@ logger = logging.getLogger("donna.main")
 
 
 def _ensure_data_dir() -> None:
-    data = Path(__file__).parent.parent / "data"
-    data.mkdir(exist_ok=True)
+    _DATA_DIR.mkdir(exist_ok=True)
 
 
 _ensure_data_dir()

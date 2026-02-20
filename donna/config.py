@@ -60,13 +60,21 @@ VAD_FRAME_DURATION_MS: int = 30                           # must be 10, 20, or 3
 # Silence frames needed before end-of-speech is declared
 VAD_SILENCE_FRAMES: int = int(os.getenv("VAD_SILENCE_FRAMES", "25"))
 # RMS energy threshold: frames above this are treated as speech even if webrtcvad
-# disagrees.  300 ≈ quiet voice on a typical laptop mic; lower if needed.
-STT_ENERGY_THRESHOLD: int = int(os.getenv("STT_ENERGY_THRESHOLD", "300"))
+# disagrees. Lowered default from 300 to 30 to accommodate lower-amplitude inputs
+# observed on some Windows drivers. You can still override via `.env`.
+STT_ENERGY_THRESHOLD: int = int(os.getenv("STT_ENERGY_THRESHOLD", "30"))
+
+# Initial STT capture timeout after wake word (seconds). The initial
+# capture will listen until silence or this timeout is reached.
+STT_INITIAL_TIMEOUT: int = int(os.getenv("STT_INITIAL_TIMEOUT", "60"))
 
 # ─── Audio ────────────────────────────────────────────────────────────────────
 AUDIO_SAMPLE_RATE: int = 16000
 AUDIO_CHANNELS: int = 1
 AUDIO_CHUNK_FRAMES: int = 512                             # frames per PyAudio read
+# Optional: force a specific input device index (set in .env). If unset, default device is used.
+_audio_device_env = os.getenv("AUDIO_INPUT_DEVICE_INDEX", None)
+AUDIO_INPUT_DEVICE_INDEX: int | None = int(_audio_device_env) if _audio_device_env not in (None, "") else None
 
 # ─── Database ─────────────────────────────────────────────────────────────────
 DB_DIR: Path = _ROOT / "data"

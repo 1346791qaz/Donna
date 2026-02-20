@@ -19,7 +19,7 @@ import anthropic
 
 from donna.config import ANTHROPIC_API_KEY, CLAUDE_MODEL, USER_NAME
 from donna.db import conversation_db
-from donna.tools import gmail_tools, calendar_tools, contacts_tools
+from donna.tools import gmail_tools, calendar_tools, contacts_tools, web_tools
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +54,12 @@ Response formatting:
 - Responses will be read aloud by a TTS engine — write exactly as you would speak
 
 Tool use:
-- Available tools: Gmail (read/send), Google Calendar (read/write), Contacts DB (CRUD), Conversation History
+- Available tools: Gmail (read/send), Google Calendar (read/write), Contacts DB (CRUD), Web Search (search the internet), Web Fetch (read web pages), Conversation History
+- Use web tools to retrieve open source information, documentation, project details, and current information from the internet
+- For open source projects, libraries, and technical documentation: use the search or fetch tools to find authoritative sources
 - Use tools silently — do not narrate tool calls to the user
 - Synthesise tool results into natural language responses
+- When fetching URLs, extract and summarise relevant content naturally
 
 Current date and time: {datetime}
 User's name: {user_name}"""
@@ -242,6 +245,64 @@ TOOL_DEFINITIONS: list[dict] = [
             "required": ["query"],
         },
     },
+    # ── Web ──
+    {
+        "name": "web_search",
+        "description": "Search the internet for information. Returns web results with titles, URLs, and snippets.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query, e.g. 'Python asyncio documentation' or 'best React libraries 2025'.",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return (default 5).",
+                    "default": 5,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "fetch_url",
+        "description": "Fetch and summarise content from a specific web page or URL.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Full URL to fetch, e.g. 'https://docs.python.org/3/library/asyncio.html'.",
+                },
+                "max_length": {
+                    "type": "integer",
+                    "description": "Maximum character length of returned content (default 2000).",
+                    "default": 2000,
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "search_opensource",
+        "description": "Search for open source projects, libraries, documentation, and resources on GitHub, PyPI, npm, etc.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search term, e.g. 'JSON parsing library Python' or 'React component library'.",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum results (default 5).",
+                    "default": 5,
+                },
+            },
+            "required": ["query"],
+        },
+    },
 ]
 
 # ─── Tool dispatch ────────────────────────────────────────────────────────────
@@ -258,6 +319,9 @@ _TOOL_MAP: dict[str, Callable[..., Any]] = {
     "add_contact":            contacts_tools.add_contact,
     "update_contact":         contacts_tools.update_contact,
     "search_contacts":        contacts_tools.search_contacts,
+    "web_search":             web_tools.web_search,
+    "fetch_url":              web_tools.fetch_url,
+    "search_opensource":      web_tools.search_opensource,
 }
 
 

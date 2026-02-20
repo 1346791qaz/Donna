@@ -31,6 +31,7 @@ from donna.config import (
     VAD_SAMPLE_RATE,
     VAD_FRAME_DURATION_MS,
     VAD_SILENCE_FRAMES,
+    STT_ENERGY_THRESHOLD,
     AUDIO_CHANNELS,
     AUDIO_CHUNK_FRAMES,
 )
@@ -114,6 +115,8 @@ def record_until_silence(
     total_frames = 0
     max_frames = int(timeout_seconds * 1000 / VAD_FRAME_DURATION_MS)
 
+    _vad_exc_logged = False
+
     try:
         logger.debug("VAD recording started.")
         while total_frames < max_frames:
@@ -124,11 +127,22 @@ def record_until_silence(
             raw = stream.read(frame_samples, exception_on_overflow=False)
             total_frames += 1
 
-            is_speech = False
+            # Energy-based speech detection (works even if webrtcvad misbehaves)
+            samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
+            rms = float(np.sqrt(np.mean(samples ** 2)))
+
+            if total_frames == 1:
+                logger.info(
+                    "STT stream first-frame RMS=%.1f  (0 → stream is silent/closed)", rms
+                )
+
+            is_speech = rms > STT_ENERGY_THRESHOLD
             try:
-                is_speech = vad.is_speech(raw, VAD_SAMPLE_RATE)
-            except Exception:
-                pass
+                is_speech = is_speech or vad.is_speech(raw, VAD_SAMPLE_RATE)
+            except Exception as exc:
+                if not _vad_exc_logged:
+                    logger.warning("webrtcvad raised on frame %d: %s", total_frames, exc)
+                    _vad_exc_logged = True
 
             if not triggered:
                 ring_buffer.append(raw)

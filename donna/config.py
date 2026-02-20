@@ -59,6 +59,9 @@ VAD_SAMPLE_RATE: int = 16000
 VAD_FRAME_DURATION_MS: int = 30                           # must be 10, 20, or 30
 # Silence frames needed before end-of-speech is declared
 VAD_SILENCE_FRAMES: int = int(os.getenv("VAD_SILENCE_FRAMES", "25"))
+# RMS energy threshold: frames above this are treated as speech even if webrtcvad
+# disagrees.  300 ≈ quiet voice on a typical laptop mic; lower if needed.
+STT_ENERGY_THRESHOLD: int = int(os.getenv("STT_ENERGY_THRESHOLD", "300"))
 
 # ─── Audio ────────────────────────────────────────────────────────────────────
 AUDIO_SAMPLE_RATE: int = 16000

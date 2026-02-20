@@ -21,6 +21,11 @@ import threading
 import os
 from pathlib import Path
 
+# ─── Data directory must exist before logging tries to open the log file ──────
+
+_DATA_DIR = Path(__file__).parent.parent / "data"
+_DATA_DIR.mkdir(exist_ok=True)
+
 # ─── Logging setup ────────────────────────────────────────────────────────────
 
 logging.basicConfig(
@@ -29,7 +34,7 @@ logging.basicConfig(
     handlers=[
         logging.StreamHandler(sys.stdout),
         logging.FileHandler(
-            Path(__file__).parent.parent / "data" / "donna.log",
+            _DATA_DIR / "donna.log",
             encoding="utf-8",
         ),
     ],
@@ -38,8 +43,7 @@ logger = logging.getLogger("donna.main")
 
 
 def _ensure_data_dir() -> None:
-    data = Path(__file__).parent.parent / "data"
-    data.mkdir(exist_ok=True)
+    _DATA_DIR.mkdir(exist_ok=True)
 
 
 _ensure_data_dir()

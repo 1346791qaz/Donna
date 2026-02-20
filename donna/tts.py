@@ -70,25 +70,20 @@ def _speak_blocking(text: str, voice: str, speed: float) -> None:
     _stop_event.clear()
     try:
         pipeline = _get_pipeline()
+        # Kokoro KPipeline yields (graphemes, phonemes, audio_array) tuples.
+        # Sample rate is fixed at 24 kHz.
         generator = pipeline(text, voice=voice, speed=speed)
-        for audio_segment in generator:
+        for _gs, _ps, audio in generator:
             if _stop_event.is_set():
                 logger.debug("TTS interrupted.")
                 break
-            # Kokoro yields (samples, sample_rate, _) tuples
-            if isinstance(audio_segment, tuple):
-                samples, sample_rate, *_ = audio_segment
-            else:
-                # Some versions yield just the array; assume 24 kHz
-                samples = audio_segment
-                sample_rate = 24000
 
-            samples_np = np.array(samples, dtype=np.float32)
-            # Normalise to [-1, 1] if needed
-            if samples_np.max() > 1.0 or samples_np.min() < -1.0:
-                samples_np = samples_np / max(abs(samples_np.max()), abs(samples_np.min()))
+            samples_np = np.array(audio, dtype=np.float32)
+            peak = np.abs(samples_np).max()
+            if peak > 1.0:
+                samples_np /= peak
 
-            sd.play(samples_np, samplerate=sample_rate, blocking=True)
+            sd.play(samples_np, samplerate=24000, blocking=True)
     except Exception:
         logger.exception("TTS playback error")
 

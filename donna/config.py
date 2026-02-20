@@ -51,7 +51,7 @@ WHISPER_COMPUTE_TYPE: str = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
 
 # ─── TTS ─────────────────────────────────────────────────────────────────────
 TTS_VOICE: str = os.getenv("TTS_VOICE", "bf_emma")
-TTS_SPEED: float = float(os.getenv("TTS_SPEED", "0.95"))
+TTS_SPEED: float = float(os.getenv("TTS_SPEED", "1.09"))
 
 # ─── VAD ─────────────────────────────────────────────────────────────────────
 VAD_MODE: int = int(os.getenv("VAD_MODE", "3"))          # 0–3; 3 = most aggressive

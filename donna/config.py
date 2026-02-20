@@ -54,7 +54,7 @@ TTS_VOICE: str = os.getenv("TTS_VOICE", "bf_emma")
 TTS_SPEED: float = float(os.getenv("TTS_SPEED", "1.09"))
 
 # ─── VAD ─────────────────────────────────────────────────────────────────────
-VAD_MODE: int = int(os.getenv("VAD_MODE", "3"))          # 0–3; 3 = most aggressive
+VAD_MODE: int = int(os.getenv("VAD_MODE", "1"))          # 0–3; 3 = most aggressive, 1 = recommended for home/office
 VAD_SAMPLE_RATE: int = 16000
 VAD_FRAME_DURATION_MS: int = 30                           # must be 10, 20, or 30
 # Silence frames needed before end-of-speech is declared

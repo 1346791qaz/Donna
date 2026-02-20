@@ -149,8 +149,13 @@ def record_until_silence(
                         )
                         break
 
+        logger.info(
+            "VAD result: %d total frames, triggered=%s, %d voiced frames collected.",
+            total_frames, triggered, len(voiced_frames),
+        )
+
         if not voiced_frames:
-            logger.debug("No speech detected within timeout.")
+            logger.info("No speech detected within timeout.")
             return None
 
         return _pcm_to_wav_bytes(voiced_frames, VAD_SAMPLE_RATE)

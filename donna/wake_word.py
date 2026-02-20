@@ -88,7 +88,12 @@ class WakeWordEngine:
         logger.info("Wake word engine listening for 'Hey Donna'.")
 
     def pause_stream(self) -> None:
-        """Close the mic stream so STT can claim the microphone.
+        """Close the mic stream AND terminate PyAudio so STT can claim the device.
+
+        On Windows WASAPI, leaving the PyAudio host-API instance alive while
+        a second instance opens the same device results in the new stream
+        returning silence.  Terminating here ensures only one PortAudio
+        instance owns the device at a time.
 
         Safe to call from within the on_wake callback (i.e. from this engine's
         own thread) because _run() is blocked inside on_wake at that point.
@@ -100,12 +105,20 @@ class WakeWordEngine:
             except Exception:
                 pass
             self._stream = None
+        if self._pa:
+            try:
+                self._pa.terminate()
+            except Exception:
+                pass
+            self._pa = None
 
     def resume_stream(self) -> None:
         """Reopen the mic stream after STT has released the microphone."""
-        if self._pa is None or self._porcupine is None:
+        if self._porcupine is None:
             return
         try:
+            if self._pa is None:
+                self._pa = pyaudio.PyAudio()
             self._stream = self._pa.open(
                 rate=self._porcupine.sample_rate,
                 channels=1,

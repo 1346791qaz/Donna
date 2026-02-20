@@ -18,6 +18,7 @@ going directly: text → LLM → TTS.
 import logging
 import sys
 import threading
+import time
 import os
 from pathlib import Path
 
@@ -137,9 +138,11 @@ def _on_wake() -> None:
             _window.set_listening(True)
 
         # Release the wake word mic stream so STT can open its own.
-        # (On ALSA, only one stream can hold the mic device at a time.)
+        # pause_stream() also terminates PyAudio so Windows WASAPI fully
+        # releases the device before STT opens a new handle.
         if _wake_engine:
             _wake_engine.pause_stream()
+        time.sleep(0.15)  # give OS audio subsystem time to release the device
         try:
             transcript = stt.listen_and_transcribe(
                 timeout_seconds=15.0,

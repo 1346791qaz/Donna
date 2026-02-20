@@ -112,6 +112,8 @@ def _handle_llm_response(user_text: str) -> None:
         tts.speak(response, block=True)
     except Exception:
         logger.exception("LLM/TTS pipeline error")
+        if _window:
+            _window.add_message("Donna", "Sorry, something went wrong. Please try again.")
     finally:
         if _window:
             _window.set_thinking(False)
@@ -143,6 +145,7 @@ def _on_wake() -> None:
             logger.info("No speech detected after wake word.")
             if _window:
                 _window.set_listening(False)
+                _window.set_status("No speech detected", "#FFA500")
             return
 
         logger.info("User said: %r", transcript)

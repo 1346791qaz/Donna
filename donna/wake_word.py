@@ -87,6 +87,35 @@ class WakeWordEngine:
         self._thread.start()
         logger.info("Wake word engine listening for 'Hey Donna'.")
 
+    def pause_stream(self) -> None:
+        """Close the mic stream so STT can claim the microphone.
+
+        Safe to call from within the on_wake callback (i.e. from this engine's
+        own thread) because _run() is blocked inside on_wake at that point.
+        """
+        if self._stream:
+            try:
+                self._stream.stop_stream()
+                self._stream.close()
+            except Exception:
+                pass
+            self._stream = None
+
+    def resume_stream(self) -> None:
+        """Reopen the mic stream after STT has released the microphone."""
+        if self._pa is None or self._porcupine is None:
+            return
+        try:
+            self._stream = self._pa.open(
+                rate=self._porcupine.sample_rate,
+                channels=1,
+                format=pyaudio.paInt16,
+                input=True,
+                frames_per_buffer=self._porcupine.frame_length,
+            )
+        except Exception:
+            logger.exception("Failed to reopen wake word audio stream after STT.")
+
     def stop(self) -> None:
         """Signal the background thread to stop and clean up resources."""
         self._stop_event.set()

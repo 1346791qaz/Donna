@@ -136,10 +136,18 @@ def _on_wake() -> None:
         if _window:
             _window.set_listening(True)
 
-        transcript = stt.listen_and_transcribe(
-            timeout_seconds=15.0,
-            stop_flag=_voice_stop_flag,
-        )
+        # Release the wake word mic stream so STT can open its own.
+        # (On ALSA, only one stream can hold the mic device at a time.)
+        if _wake_engine:
+            _wake_engine.pause_stream()
+        try:
+            transcript = stt.listen_and_transcribe(
+                timeout_seconds=15.0,
+                stop_flag=_voice_stop_flag,
+            )
+        finally:
+            if _wake_engine:
+                _wake_engine.resume_stream()
 
         if not transcript:
             logger.info("No speech detected after wake word.")

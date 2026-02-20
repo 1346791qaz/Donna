@@ -122,6 +122,9 @@ def speak(
     speed = speed if speed is not None else TTS_SPEED
     text = sanitize_for_tts(text)
 
+    if not text:
+        return
+
     if not block:
         t = threading.Thread(target=_speak_blocking, args=(text, voice, speed), daemon=True)
         t.start()

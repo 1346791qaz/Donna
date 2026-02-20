@@ -310,6 +310,7 @@ def chat(user_message: str, on_tool_call: Callable[[str, dict], None] | None = N
             system=_build_system_prompt(),
             tools=TOOL_DEFINITIONS,
             messages=messages,
+            timeout=60.0,
         )
 
         # Collect text from this response turn

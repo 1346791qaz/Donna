@@ -51,6 +51,10 @@ def get_session_id() -> str:
     return _SESSION_ID
 
 
+def _today_date_str() -> str:
+    return date.today().isoformat()
+
+
 @contextmanager
 def _get_conn():
     conn = sqlite3.connect(
@@ -72,6 +76,55 @@ def init_db() -> None:
     with _get_conn() as conn:
         conn.executescript(_DDL)
     logger.info("Conversation DB initialised at %s", CONVERSATION_DB_PATH)
+
+
+def record_app_event(event: str) -> None:
+    """Record a lightweight app lifecycle event (e.g. 'opened' / 'closed')."""
+    with _get_conn() as conn:
+        conn.execute(
+            "INSERT INTO conversations (role, content, session_id) VALUES (?, ?, ?)",
+            ("event", event, get_session_id()),
+        )
+
+
+def get_app_events_today() -> list[dict]:
+    """Return all recorded app events for today (role='event')."""
+    today = _today_date_str()
+    start = f"{today} 00:00:00"
+    end = f"{today} 23:59:59"
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT role, content, timestamp FROM conversations WHERE role = ? AND timestamp BETWEEN ? AND ? ORDER BY id",
+            ("event", start, end),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_assistant_messages_today() -> list[dict]:
+    """Return assistant (`role = 'assistant'`) messages from today, chronological."""
+    today = _today_date_str()
+    start = f"{today} 00:00:00"
+    end = f"{today} 23:59:59"
+    with _get_conn() as conn:
+        # Assistant messages are stored with role='assistant'.
+        rows = conn.execute(
+            "SELECT role, content, timestamp FROM conversations WHERE role = ? AND timestamp BETWEEN ? AND ? ORDER BY id",
+            ("assistant", start, end),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def has_assistant_message_today(content: str) -> bool:
+    """Return True if the exact content was already spoken by Donna today."""
+    today = _today_date_str()
+    start = f"{today} 00:00:00"
+    end = f"{today} 23:59:59"
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM conversations WHERE role = ? AND content = ? AND timestamp BETWEEN ? AND ? LIMIT 1",
+            ("assistant", content, start, end),
+        ).fetchone()
+    return bool(row)
 
 
 def save_message(role: str, content: str) -> None:
@@ -99,10 +152,12 @@ def load_history(
     Messages are loaded newest-first, then reversed so the list is chronological.
     Token budget is applied before reversing.
     """
+    # Exclude non-dialogue events so LLM history contains only 'user' and 'assistant'
     with _get_conn() as conn:
         rows = conn.execute(
             """
             SELECT role, content FROM conversations
+            WHERE role IN ('user', 'assistant')
             ORDER BY id DESC
             LIMIT ?
             """,
@@ -126,9 +181,10 @@ def load_history(
 def load_session_history(session_id: Optional[str] = None) -> list[dict]:
     """Load all messages for a specific session (default: current)."""
     sid = session_id or get_session_id()
+    # Only return conversational roles for session history
     with _get_conn() as conn:
         rows = conn.execute(
-            "SELECT role, content FROM conversations WHERE session_id = ? ORDER BY id",
+            "SELECT role, content FROM conversations WHERE session_id = ? AND role IN ('user', 'assistant') ORDER BY id",
             (sid,),
         ).fetchall()
     return [{"role": r["role"], "content": r["content"]} for r in rows]

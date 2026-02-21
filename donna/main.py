@@ -18,6 +18,7 @@ going directly: text → LLM → TTS.
 import logging
 import sys
 import threading
+import time
 import os
 from pathlib import Path
 
@@ -87,14 +88,50 @@ def _play_chime() -> None:
     except Exception:
         pass  # chime is nice-to-have; never block on it
 
+    # Fallback: if WAV wasn't available or playback failed, play a simple
+    # system beep so the user hears the cue.  Use winsound on Windows; on
+    # other platforms try the ASCII bell as a fallback.
+    try:
+        if not Path(CHIME_PATH).exists():
+            if os.name == "nt":
+                import winsound
+
+                try:
+                    winsound.MessageBeep(-1)
+                except Exception:
+                    try:
+                        winsound.Beep(800, 150)
+                    except Exception:
+                        pass
+            else:
+                # Best-effort fallback: ASCII bell
+                try:
+                    print("\a", end="", flush=True)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
 
 # ─── Interaction pipeline ─────────────────────────────────────────────────────
 
 def _on_proactive_response(text: str) -> None:
     """Called by the scheduler when a proactive message is generated."""
+    # Avoid repeating the same proactive message if Donna already said it today
+    try:
+        if conversation_db.has_assistant_message_today(text):
+            logger.info("Proactive message suppressed (already said today).")
+            return
+    except Exception:
+        logger.exception("Failed to check for duplicate proactive message.")
+
     if _window:
         _window.add_message("Donna", text)
     tts.speak(text, block=False)
+    try:
+        conversation_db.save_message("assistant", text)
+    except Exception:
+        logger.exception("Failed to save proactive message to conversation DB.")
 
 
 def _handle_llm_response(user_text: str) -> None:
@@ -105,11 +142,58 @@ def _handle_llm_response(user_text: str) -> None:
         def _on_tool(name: str, _input: dict) -> None:
             logger.debug("Tool: %s", name)
 
-        response = llm.chat(user_text, on_tool_call=_on_tool)
-        if _window:
-            _window.add_message("Donna", response)
-            _window.set_speaking(True)
-        tts.speak(response, block=True)
+        # Handle the initial user message and up to a few quick follow-ups
+        # listened for immediately after Donna finishes speaking. This keeps
+        # the whole interaction inside the same `_interaction_lock`.
+        cur_user_text = user_text
+        followups_remaining = 3
+        while True:
+            response = llm.chat(cur_user_text, on_tool_call=_on_tool)
+            # Always speak user-triggered responses (no suppression).
+            # Only proactive messages are suppressed if already said today.
+            if _window:
+                _window.add_message("Donna", response)
+                _window.set_speaking(True)
+            tts.speak(response, block=True)
+            try:
+                conversation_db.save_message("assistant", response)
+            except Exception:
+                logger.exception("Failed to save Donna response to DB.")
+
+            # After Donna speaks, wait up to 5s for the user to start talking.
+            # If the user starts within that window, record until there are
+            # 5 seconds of silence after the user finishes speaking.
+            if _window:
+                _window.set_listening(True)
+            try:
+                from donna.config import VAD_FRAME_DURATION_MS
+
+                post_silence_ms = 5000
+                post_silence_frames = int(post_silence_ms / VAD_FRAME_DURATION_MS)
+
+                wav = stt.record_until_silence(
+                    timeout_seconds=5.0,
+                    stop_flag=_voice_stop_flag,
+                    silence_frames_override=post_silence_frames,
+                )
+            finally:
+                if _window:
+                    _window.set_listening(False)
+
+            if not wav:
+                break
+
+            follow = stt.transcribe(wav)
+            if not follow:
+                break
+
+            logger.info("User (follow-up) said: %r", follow)
+            if _window:
+                _window.add_message("You", follow)
+            cur_user_text = follow
+            followups_remaining -= 1
+            if followups_remaining <= 0:
+                break
     except Exception:
         logger.exception("LLM/TTS pipeline error")
         if _window:
@@ -131,15 +215,39 @@ def _on_wake() -> None:
     try:
         # Interrupt any ongoing speech
         tts.interrupt()
-        _play_chime()
 
         if _window:
             _window.set_listening(True)
 
-        transcript = stt.listen_and_transcribe(
-            timeout_seconds=15.0,
-            stop_flag=_voice_stop_flag,
-        )
+        # Chime playback disabled to avoid the cue being captured by the mic
+        # and transcribed. Transcript will be captured directly from the
+        # wake-word engine's stream.
+        transcript = ""
+        from donna.config import STT_INITIAL_TIMEOUT, VAD_FRAME_DURATION_MS
+
+        if _wake_engine:
+            try:
+                # Wait up to STT_INITIAL_TIMEOUT, and treat N frames (~5s) of
+                # trailing silence as end-of-speech so users aren't cut off.
+                post_silence_ms = 5000
+                post_silence_frames = int(post_silence_ms / VAD_FRAME_DURATION_MS)
+
+                wav = _wake_engine.capture_audio_for_stt(
+                    timeout_seconds=STT_INITIAL_TIMEOUT,
+                    stop_flag=_voice_stop_flag,
+                    silence_frames_override=post_silence_frames,
+                )
+                if wav:
+                    transcript = stt.transcribe(wav)
+                else:
+                    transcript = ""
+            except Exception:
+                logger.exception("Wake-engine STT capture/transcribe failed.")
+                transcript = ""
+        else:
+            transcript = stt.listen_and_transcribe(
+                timeout_seconds=15.0, stop_flag=_voice_stop_flag
+            )
 
         if not transcript:
             logger.info("No speech detected after wake word.")
@@ -201,6 +309,10 @@ def _on_hide_window() -> None:
 def _shutdown() -> None:
     global _wake_engine, _scheduler
     logger.info("Donna shutting down…")
+    try:
+        conversation_db.record_app_event("closed")
+    except Exception:
+        logger.exception("Failed to record shutdown event.")
     _voice_stop_flag.set()
     tts.interrupt()
     if _wake_engine:
@@ -222,6 +334,23 @@ def main() -> None:
     # 1. Databases
     contacts_db.init_db()
     conversation_db.init_db()
+    # Record app open and report prior activity for today
+    try:
+        conversation_db.record_app_event("opened")
+        events = conversation_db.get_app_events_today()
+        if events:
+            logger.info("App events today: %s", events)
+        assistant_msgs = conversation_db.get_assistant_messages_today()
+        if assistant_msgs:
+            logger.info(
+                "Donna already spoke today; last statements: %s",
+                [m["content"] for m in assistant_msgs[-5:]],
+            )
+            if _window:
+                for m in assistant_msgs[-5:]:
+                    _window.add_message("Donna (earlier)", m["content"])
+    except Exception:
+        logger.exception("Failed to record or fetch today's app events/messages.")
 
     # 2. Build UI (must happen on main thread before mainloop)
     _window = DonnaWindow(
@@ -229,8 +358,40 @@ def main() -> None:
             target=_on_text_input, args=(t,), daemon=True
         ).start(),
         on_mic_toggle=_on_mic_toggle,
-        on_close=_on_hide_window,
+        on_close=_shutdown,
     )
+    # If Donna already spoke today, populate the UI with her recent statements
+    try:
+        assistant_msgs = conversation_db.get_assistant_messages_today()
+        if assistant_msgs:
+            for m in assistant_msgs[-5:]:
+                _window.add_message("Donna (earlier)", m["content"])
+    except Exception:
+        logger.exception("Failed to populate UI with today's assistant messages.")
+
+    # If Donna already spoke today, greet the user and indicate we're picking up where we left off
+    try:
+        from datetime import datetime
+        assistant_msgs = conversation_db.get_assistant_messages_today()
+        if assistant_msgs:
+            hour = datetime.now().hour
+            if hour < 12:
+                greeting = "Good morning. I'm back and ready to help. Let's pick up where we left off."
+            elif hour < 17:
+                greeting = "Good afternoon. Welcome back. I'm here to continue assisting you."
+            else:
+                greeting = "Good evening. I'm back on duty. Let's continue from where we were."
+            
+            logger.info("Donna startup greeting: %s", greeting)
+            if _window:
+                _window.add_message("Donna", greeting)
+            tts.speak(greeting, block=False)
+            try:
+                conversation_db.save_message("assistant", greeting)
+            except Exception:
+                logger.exception("Failed to save startup greeting to DB.")
+    except Exception:
+        logger.exception("Failed to deliver startup greeting.")
 
     # 3. System tray
     tray = SystemTray(
